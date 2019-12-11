@@ -1,0 +1,200 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load relevant libraries
+```{r load library}
+library(Seurat)
+library(dplyr)
+library(Matrix)
+```
+#load the UMI matrix
+```{r load the dataset}
+Ctrl_24h.data=read.table(file=path_of_HCC1143_24h_Ctrl_UMI_count.txt, sep="\t", header = TRUE, row.names = 1)
+Ctrl_24h=CreateSeuratObject(raw.data = Ctrl_24h.data, project = "Control")
+Treated_24h.data=read.table(file=path_of_HCC1143_24h_Treated_UMI_count.txt, sep="\t", header = TRUE, row.names = 1)
+Treated_24h=CreateSeuratObject(raw.data = Treated_24h.data, project = "Paclitaxel")
+```
+#merge two datasets
+```{r}
+combined_24h <- MergeSeurat(object1 = Ctrl_24h, object2 = Treated_24h, project = "24h")
+combined_24h
+```
+#quality control of datasets
+```{r}
+#calculate the percent.mito values.
+mito.genes <- grep(pattern = "^MT-", x = rownames(x = combined_24h@data), value = TRUE)
+percent.mito <- Matrix::colSums(combined_24h@raw.data[mito.genes, ])/Matrix::colSums(combined_24h@raw.data)
+combined_24h <- AddMetaData(object =combined_24h, metadata = percent.mito, col.name = "percent.mito")
+#visualize QC metrics
+VlnPlot(object = combined_24h, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
+#filter low quality cells
+combined_24h <- FilterCells(combined_24h, subset.names = c("nUMI", "nGene", "percent.mito"), low.thresholds=c(10000, 2000, -Inf), high.thresholds= c(Inf, Inf, 0.13))
+```
+
+##Normalizing data
+```{r normalization}
+#normalization
+combined_24h <- NormalizeData(object = combined_24h, normalization.method = "LogNormalize", scale.factor = 50000)
+#scale the data and regress out UMI count
+combined_24h=ScaleData(object = combined_24h, vars.to.regress="nUMI", model.use = 'negbinom', display.progress = TRUE)
+```
+#load in gene signatues of S and G2M phases of cell cycle
+```{r}
+#Read in a list of cell cycle markers, from Tirosh et al, 2015
+cc.genes <- readLines(con =path_of_regev_lab_cell_cycle_genes.txt)
+#Segregate this list into markers of S phase and G2M phase
+s.genes <- cc.genes[1:43]
+g2m.genes <- cc.genes[44:97]
+```
+#assign cell cycle scores
+```{r}
+combined_24h <- CellCycleScoring(object = combined_24h, s.genes = s.genes, g2m.genes = g2m.genes, set.ident = TRUE)
+```
+#stratify cells by cell cycle phase
+```{r}
+G1_cells=row.names(combined_24h@meta.data)[combined_24h@meta.data$Phase=='G1']
+G1=SubsetData(combined_24h, cells.use=G1_cells)
+
+S_cells=row.names(combined_24h@meta.data)[combined_24h@meta.data$Phase=='S']
+S=SubsetData(combined_24h, cells.use=S_cells)
+
+G2M_cells=row.names(combined_24h@meta.data)[combined_24h@meta.data$Phase=='G2M']
+G2M=SubsetData(combined_24h, cells.use=G2M_cells)
+```
+#Normalization, Dimention reduction, Clustering and Identification of marker genes for G1 phase cells
+```{r}
+#get the raw UMI counts of G1 phase cells
+G1.raw.data <- combined_24h@raw.data[, G1_cells]
+#filter rarely expressed genes
+min_cell_num=0.05 * dim(G1.raw.data)[2]
+G1=CreateSeuratObject(raw.data = G1.raw.data, min.cells=min_cell_num)
+#Normalizing data
+G1 <- NormalizeData(object = G1, normalization.method = "LogNormalize", scale.factor = 50000)
+#scale the data and regress out UMI count
+G1=ScaleData(object = G1, vars.to.regress='nUMI', model.use = 'negbinom', display.progress = FALSE)
+#get the meta data of G1 phase cells
+G1@meta.data <- combined_24h@meta.data[G1_cells,]
+```
+#Identification of highly variable genes
+```{r}
+G1 <- FindVariableGenes(object = G1,mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.1, x.high.cutoff = Inf, y.cutoff = 1, num.bin = 20)
+length(G1@var.genes)
+```
+#Perform PCA analysis
+```{r}
+G1 <- RunPCA(G1, pc.genes = G1@var.genes, do.print = FALSE, pcs.compute = 40)
+```
+#Cluster cells
+```{r}
+G1 <- FindClusters(object=G1, reduction.type = "pca",  dims.use = 1:30, print.output = 0, save.SNN = TRUE, force.recalc=TRUE, resolution=0.5)
+```
+#Dimplot
+```{r}
+G1 <- RunTSNE(G1, dims.use = 1:30, do.fast = T, perplexity=38)
+p1=DimPlot(object = G1, label = TRUE, reduction.use ='tsne', group.by = "orig.ident", cols.use=c("#00e6e6", "#ff80ff"), no.axes =FALSE)
+p2=DimPlot(object = G1, label = TRUE, reduction.use ='tsne', group.by = "res.0.5", cols.use=c("#cca300", "#004080"), no.axes =FALSE)
+```
+#Finding differentially expressed genes (cluster biomarkers)
+```{r}
+G1.markers <- FindAllMarkers(object = G1, only.pos = TRUE, min.pct = 0.1, logfc.threshold = 0.25)
+G1.markers=G1.markers[G1.markers$p_val_adj<=0.01, ]
+G1.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC) ->top10
+```
+#do heatmap for the top 10 markers
+```{r}
+DoHeatmap(object = G1, genes.use = top10$gene)
+```
+
+#Normalization, Dimention reduction, Clustering and Identification of marker genes for S phase cells
+```{r}
+#get the raw UMI counts of S phase cells
+S.raw.data <- combined_24h@raw.data[, S_cells]
+#filter rarely expressed genes
+min_cell_num=0.05 * dim(S.raw.data)[2]
+S=CreateSeuratObject(raw.data = S.raw.data, min.cells=min_cell_num)
+#Normalizing data
+S <- NormalizeData(object = S, normalization.method = "LogNormalize", scale.factor = 50000)
+#scale the data and regress out UMI count
+S=ScaleData(object = S, vars.to.regress='nUMI', model.use = 'negbinom', display.progress = FALSE)
+
+#get the meta data of S cells
+S@meta.data <- combined_24h@meta.data[S_cells,]
+```
+#Identification of highly variable genes
+```{r find variable genes}
+S <- FindVariableGenes(object = S,mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.1, x.high.cutoff = Inf, y.cutoff = 1, num.bin = 20)
+length(S@var.genes)
+```
+#Perform PCA analysis
+```{r}
+S <- RunPCA(S, pc.genes = S@var.genes, do.print = FALSE, pcs.compute = 40)
+```
+#Cluster cells
+```{r}
+S <- FindClusters(object=S, reduction.type = "pca",  dims.use = 1:30, print.output = 0, save.SNN = TRUE, force.recalc=TRUE, resolution=0.4)
+```
+#Dimplot
+```{r}
+S <- RunTSNE(S, dims.use = 1:30, do.fast = T, perplexity=35)
+p1=DimPlot(object = S, label = TRUE, reduction.use ='tsne', group.by = "orig.ident", cols.use=c("#00e6e6", "#ff80ff"), no.axes =FALSE)
+p2=DimPlot(object = S, label = TRUE, reduction.use ='tsne', group.by = "res.0.4", cols.use=c("#990073", "#86b300"), no.axes =FALSE)
+```
+#Finding differentially expressed genes (cluster biomarkers)
+```{r}
+S.markers <- FindAllMarkers(object = S, only.pos = TRUE, min.pct = 0.1, logfc.threshold = 0.25)
+S.markers=S.markers[S.markers$p_val_adj<=0.01, ]
+S.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC) ->top10
+```
+#do heatmap for the top 10 markers
+```{r}
+DoHeatmap(object = S, genes.use = top10$gene)
+```
+
+#Normalization, Dimention reduction, Clustering and Identification of marker genes for G2M phase cells
+```{r}
+#get the raw UMI counts of G2M phase cells
+G2M.raw.data <- combined_24h@raw.data[, G2M_cells]
+#filter rarely expressed genes
+min_cell_num=0.05 * dim(G2M.raw.data)[2]
+G2M=CreateSeuratObject(raw.data = G2M.raw.data, min.cells=min_cell_num)
+#Normalizing data
+G2M <- NormalizeData(object = G2M, normalization.method = "LogNormalize", scale.factor = 50000)
+#scale the data and regress out UMI count
+G2M=ScaleData(object = G2M, vars.to.regress='nUMI', model.use = 'negbinom', display.progress = FALSE)
+#get the meta data of G2M cells
+G2M@meta.data <- combined_24h@meta.data[G2M_cells,]
+```
+#Identification of highly variable genes
+```{r find variable genes}
+G2M <- FindVariableGenes(object = G2M,mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.1, x.high.cutoff = Inf, y.cutoff = 1, num.bin = 20)
+length(G2M@var.genes)
+```
+#Perform PCA analysis
+```{r PCA analysis}
+G2M <- RunPCA(G2M, pc.genes = G2M@var.genes, do.print = FALSE, pcs.compute = 40)
+```
+#Cluster cells
+```{r}
+G2M <- FindClusters(object=G2M, reduction.type = "pca",  dims.use = 1:30, print.output = 0, save.SNN = TRUE, force.recalc=TRUE, resolution=0.3)
+```
+#Dimplot
+```{r}
+G2M <- RunTSNE(G2M, dims.use = 1:30, do.fast = T, perplexity=38)
+p1=DimPlot(object = G2M, label = TRUE, reduction.use ='tsne', group.by = "orig.ident", cols.use=c("#00e6e6", "#ff80ff"))
+p2=DimPlot(object = G2M, label = TRUE, reduction.use ='tsne', group.by = "res.0.3", cols.use=c("#996600", "#339966"))
+```
+#Finding differentially expressed genes (cluster biomarkers)
+```{r}
+G2M.markers <- FindAllMarkers(object = G2M, only.pos = TRUE, min.pct = 0.1, logfc.threshold = 0.25)
+G2M.markers=G2M.markers[G2M.markers$p_val_adj<=0.01, ]
+G2M.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC) ->top10
+```
+#do heatmap for the top 10 markers
+```{r}
+DoHeatmap(object = G2M, genes.use = top10$gene)
+```
+
+
+
