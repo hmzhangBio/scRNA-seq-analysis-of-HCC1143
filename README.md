@@ -20,6 +20,7 @@ For the first four files, please download from GEO https://www.ncbi.nlm.nih.gov/
 The following R scripts are used to cluster and classify HCC1143 scRNA-seq data of 24h and 72h DMSO control and treated cells. The analysis involves stratification of cells by cell cycle phase, dimension reduction via PCA, visualization via t-SNE, and cluster analysis via SNN clustering.
 
 •	scRNA_analysis_of_24h_cells.Rmd: main script to analyze the cell populations of 24h DMSO control and treated samples
+
 •	scRNA_analysis_of_72h_cells.Rmd: main script to analyze the cell populations of 72h DMSO control and treated samples
 
 ## Reference
