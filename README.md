@@ -26,7 +26,7 @@ The following R scripts are used to cluster and classify HCC1143 scRNA-seq data 
 ## Reference
 Transcriptional rewiring of triple-negative breast cancer cells following treatment with paclitaxel reveals therapeutic vulnerabilities, in review, 2020.
 
-## sessionInfo()
+## SessionInfo()
 
 R version 3.5.1 (2018-07-02)
 Platform: x86_64-apple-darwin15.6.0 (64-bit)
@@ -43,7 +43,7 @@ en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
 stats     graphics  grDevices utils     datasets  methods   base     
 
 ### other attached packages:
-dplyr_0.8.0.1 Seurat_2.3.4  Matrix_1.2-14 cowplot_0.9.4 ggplot2_3.1.1
+dplyr_0.8.0.1  Seurat_2.3.4  Matrix_1.2-14 cowplot_0.9.4 ggplot2_3.1.1
 
 ### loaded via a namespace (and not attached):
   [1] tsne_0.1-3          segmented_0.5-3.0   nlme_3.1-137        bitops_1.0-6        bit64_0.9-7         httr_1.4.0         
