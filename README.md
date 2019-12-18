@@ -34,6 +34,7 @@ Running under: OS X El Capitan 10.11.6
 
 ### Matrix products: default
 BLAS: /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+
 LAPACK: /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libLAPACK.dylib
 
 ###  locale:
